@@ -104,6 +104,7 @@ venv.bak/
 .mypy_cache/
 
 #data
-/Cross-Domain_data
+Cross-Domain_data/
+data/
 
-/.idea
+.idea/
