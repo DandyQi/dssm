@@ -43,7 +43,7 @@ def make_author_pair(sub, obj):
     common_author_list = pd.merge(left=sub_author_list, right=obj_author_list, how="inner", on="author")["author"]
     logger.info("the size of collaboration author: %s" % len(common_author_list))
 
-    author_pair = []
+    pair = []
     for author in common_author_list:
         paper_list = author2paper[author2paper["author"] == author]["paper_idx"].values.astype(np.int32)
         paper = data_set.iloc[paper_list, :]
@@ -51,10 +51,10 @@ def make_author_pair(sub, obj):
         for idx, item in collaboration_author.iterrows():
             for au in item["author"].split(","):
                 if au != author:
-                    author_pair.append([author, au, item["year"]])
-    author_pair = pd.DataFrame(np.array(author_pair), columns=["sub_author", "obj_author", "year"])
-    author_pair["year"] = author_pair["year"].astype(np.int32)
-    return author_pair
+                    pair.append([author, au, item["year"]])
+    pair = pd.DataFrame(np.array(pair), columns=["sub_author", "obj_author", "year"])
+    pair["year"] = pair["year"].astype(np.int32)
+    return pair
 
 
 def make_feature(author):
@@ -65,9 +65,9 @@ def make_feature(author):
     return feat
 
 
-def make_training_set(author_pair, year):
-    training_pair = author_pair[author_pair["year"] <= year]
-    temp_pair = author_pair[author_pair["year"] > year]
+def make_training_set(pair, year):
+    training_pair = pair[pair["year"] <= year]
+    temp_pair = pair[pair["year"] > year]
 
     eval_pair = []
     author = training_pair["sub_author"].drop_duplicates().values
