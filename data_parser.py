@@ -65,6 +65,23 @@ def make_feature(author):
     return feat
 
 
+def save_data(pair, name):
+    query_list = []
+    pos_list = []
+    for idx, item in pair.iterrows():
+        query_list.append(make_feature(item["sub_author"]))
+        pos_list.append(make_feature(item["obj_author"]))
+
+    query = np.array(query_list)
+    pos = np.array(pos_list)
+
+    pickle.dump(query, open("data/%s_query" % name, "wb"), protocol=2)
+    pickle.dump(pos, open("data/%s_positive" % name, "wb"), protocol=2)
+
+    neg = feature[np.array(random.sample(range(data_set.shape[0]), pair.shape[0]))].toarray()
+    pickle.dump(neg, open("data/%s_negative" % name, "wb"), protocol=2)
+
+
 def make_training_set(pair, year):
     training_pair = pair[pair["year"] <= year]
     temp_pair = pair[pair["year"] > year]
@@ -75,25 +92,13 @@ def make_training_set(pair, year):
         if temp_pair[temp_pair["sub_author"] == au].shape[0] >= 5:
             eval_pair.append(temp_pair[temp_pair["sub_author"] == au])
     eval_pair = pd.concat(eval_pair, ignore_index=True)
+    eval_pair = pd.DataFrame(eval_pair)
 
     logger.info("the size of training pair: %s" % training_pair.shape[0])
     logger.info("the size of eval pair: %s" % eval_pair.shape[0])
 
-    query_list = []
-    pos_list = []
-    for idx, item in training_pair.iterrows():
-        query_list.append(make_feature(item["sub_author"]))
-        pos_list.append(make_feature(item["obj_author"]))
-
-    query = np.array(query_list)
-    pos = np.array(pos_list)
-
-    pickle.dump(query, open("data/query", "wb"), protocol=2)
-    pickle.dump(pos, open("data/positive", "wb"), protocol=2)
-
-    neg = feature[np.array(random.sample(range(data_set.shape[0]), training_pair.shape[0]))].toarray()
-
-    pickle.dump(neg, open("data/negative", "wb"), protocol=2)
+    save_data(training_pair, "train")
+    save_data(eval_pair, "eval")
 
     logger.info("save data")
 
@@ -142,5 +147,5 @@ if __name__ == "__main__":
     corpus = data_set["content"].values
     vectorizer = TfidfVectorizer()
     feature = vectorizer.fit_transform(corpus)
-
-    make_training_set(author_pair, train_test_year)
+    print(feature.shape)
+    # make_training_set(author_pair, train_test_year)

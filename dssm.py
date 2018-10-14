@@ -7,30 +7,29 @@ TensorFlow=1.2.1
 import pandas as pd
 from scipy import sparse
 import collections
+import pickle
 import random
 import time
 import numpy as np
 import tensorflow as tf
-import data_parser
-
 flags = tf.app.flags
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('summaries_dir', 'Summaries', 'Summaries directory')
 flags.DEFINE_float('learning_rate', 0.1, 'Initial learning rate.')
-flags.DEFINE_integer('max_steps', 80000, 'Number of steps to run trainer.')
-flags.DEFINE_integer('epoch_steps', 2000, "Number of steps in one epoch.")
-flags.DEFINE_integer('pack_size', 2000, "Number of batches in one pickle pack.")
-flags.DEFINE_integer('test_pack_size', 200, "Number of batches in one pickle pack.")
+flags.DEFINE_integer('max_steps', 100, 'Number of steps to run trainer.')
+flags.DEFINE_integer('epoch_steps', 10, "Number of steps in one epoch.")
+flags.DEFINE_integer('pack_size', 10, "Number of batches in one pickle pack.")
+flags.DEFINE_integer('test_pack_size', 2, "Number of batches in one pickle pack.")
 flags.DEFINE_bool('gpu', 0, "Enable GPU or not")
 
 start = time.time()
 # 是否加BN层
-norm, epsilon = False, 0.001
+norm, epsilon = True, 0.001
 
-TRIGRAM_D = 6231
+Feature_D = 33595
 # negative sample
-NEG = 4
+NEG = 1
 # query batch size
 query_BS = 100
 # batch size
@@ -38,17 +37,29 @@ BS = query_BS * NEG
 L1_N = 400
 L2_N = 120
 
+
 # 读取数据
-train_size, test_size = 1000000, 100000
-data_path = 'D:\data\dssm/hy_test.csv'
-data_sets = data_input.get_search_data(data_path, train_size, test_size)
+class DataSet:
+    def __init__(self):
+        self.train_query = sparse.csr_matrix(pickle.load(open("data/train_query", "rb")))
+        self.train_pos = sparse.csr_matrix(pickle.load(open("data/train_positive", "rb")))
+        self.train_neg = sparse.csr_matrix(pickle.load(open("data/train_negative", "rb")))
+        self.eval_query = sparse.csr_matrix(pickle.load(open("data/eval_query", "rb")))
+        self.eval_pos = sparse.csr_matrix(pickle.load(open("data/eval_positive", "rb")))
+        self.eval_neg = sparse.csr_matrix(pickle.load(open("data/eval_negative", "rb")))
 
 
-def add_layer(inputs, in_size, out_size, activation_function=None):
+data_sets = DataSet()
+
+
+def add_layer(inputs, in_size, out_size, layer, activation_function=None):
     wlimit = np.sqrt(6.0 / (in_size + out_size))
     Weights = tf.Variable(tf.random_uniform([in_size, out_size], -wlimit, wlimit))
     biases = tf.Variable(tf.random_uniform([out_size], -wlimit, wlimit))
-    Wx_plus_b = tf.matmul(inputs, Weights) + biases
+    if layer == 1:
+        Wx_plus_b = tf.sparse_tensor_dense_matmul(inputs, Weights) + biases
+    else:
+        Wx_plus_b = tf.matmul(inputs, Weights) + biases
     if activation_function is None:
         outputs = Wx_plus_b
     else:
@@ -108,16 +119,16 @@ def variable_summaries(var, name):
 
 
 with tf.name_scope('input'):
-    query_batch = tf.sparse_placeholder(tf.float32, shape=[None, TRIGRAM_D], name='QueryBatch')
-    doc_positive_batch = tf.sparse_placeholder(tf.float32, shape=[None, TRIGRAM_D], name='DocBatch')
-    doc_negative_batch = tf.sparse_placeholder(tf.float32, shape=[None, TRIGRAM_D], name='DocBatch')
+    query_batch = tf.sparse_placeholder(tf.float32, shape=[None, Feature_D], name='QueryBatch')
+    doc_positive_batch = tf.sparse_placeholder(tf.float32, shape=[None, Feature_D], name='DocBatch')
+    doc_negative_batch = tf.sparse_placeholder(tf.float32, shape=[None, Feature_D], name='DocBatch')
     on_train = tf.placeholder(tf.bool)
 
 with tf.name_scope('FC1'):
     # 激活函数在BN之后，所以此处为None
-    query_l1 = add_layer(query_batch, TRIGRAM_D, L1_N, activation_function=None)
-    doc_positive_l1 = add_layer(doc_positive_batch, TRIGRAM_D, L1_N, activation_function=None)
-    doc_negative_l1 = add_layer(doc_negative_batch, TRIGRAM_D, L1_N, activation_function=None)
+    query_l1 = add_layer(query_batch, Feature_D, L1_N, 1, activation_function=None)
+    doc_positive_l1 = add_layer(doc_positive_batch, Feature_D, L1_N, 1, activation_function=None)
+    doc_negative_l1 = add_layer(doc_negative_batch, Feature_D, L1_N, 1, activation_function=None)
 
 with tf.name_scope('BN1'):
     query_l1 = batch_normalization(query_l1, on_train, L1_N)
@@ -136,10 +147,9 @@ with tf.name_scope('BN1'):
 
 
 with tf.name_scope('FC2'):
-    query_l2 = add_layer(query_batch, L1_N, L2_N, activation_function=None)
-    doc_positive_l2 = add_layer(doc_positive_batch, L1_N, L2_N, activation_function=None)
-    doc_negative_l2 = add_layer(doc_negative_batch, L1_N, L2_N, activation_function=None)
-
+    query_l2 = add_layer(query_l1_out, L1_N, L2_N, 2, activation_function=None)
+    doc_positive_l2 = add_layer(doc_positive_l1_out, L1_N, L2_N, 2, activation_function=None)
+    doc_negative_l2 = add_layer(doc_negative_l1_out, L1_N, L2_N, 2, activation_function=None)
 
 with tf.name_scope('BN2'):
     query_l2 = batch_normalization(query_l2, on_train, L2_N)
@@ -236,13 +246,14 @@ def pull_batch(query_data, doc_positive, doc_negative, batch_id):
 def feed_dict(on_training, Train, batch_id, drop_out_prob):
     if Train:
         batch_id = int(random.random() * (FLAGS.epoch_steps - 1))
-        query_in, doc_positive_in, doc_negative_in = pull_batch(data_sets.query_train_data,
-                                                                data_sets.doc_train_positive,
-                                                                data_sets.doc_train_negative, batch_id)
+        query_in, doc_positive_in, doc_negative_in = pull_batch(data_sets.train_query,
+                                                                data_sets.train_pos,
+                                                                data_sets.train_neg, batch_id)
     else:
         drop_out_prob = 1.0
-        query_in, doc_positive_in, doc_negative_in = pull_batch(data_sets.query_test_data, data_sets.doc_test_positive,
-                                                                data_sets.doc_test_negative, batch_id)
+        query_in, doc_positive_in, doc_negative_in = pull_batch(data_sets.eval_query,
+                                                                data_sets.eval_pos,
+                                                                data_sets.eval_neg, batch_id)
     return {query_batch: query_in, doc_positive_batch: doc_positive_in, doc_negative_batch: doc_negative_in,
             on_train: on_training}
 
