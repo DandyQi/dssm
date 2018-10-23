@@ -42,7 +42,7 @@ def make_author_pair(sub, obj):
 
     common_author_list = pd.merge(left=sub_author_list, right=obj_author_list, how="inner", on="author")["author"]
     logger.info("the size of collaboration author: %s" % len(common_author_list))
-
+    
     pair = []
     for author in common_author_list:
         paper_list = author2paper[author2paper["author"] == author]["paper_idx"].values.astype(np.int32)
@@ -113,6 +113,47 @@ def concat(row):
     return row
 
 
+def word_count(file_list):
+    import collections
+    word_freq = collections.defaultdict(int)
+    for file in file_list:
+        with open(file) as f:
+            for l in f:
+                for w in l.strip().split():  
+                    word_freq[w] += 1
+    return word_freq
+
+def build_dict(file_name, min_word_freq=50):
+    word_freq = word_count(file_name) 
+   # word_freq = filter(lambda x: x[1] > min_word_freq, word_freq.items()) # filter将词频数量低于指定值的单词删除。
+    word_freq_sorted = sorted(word_freq, key=lambda x: (-x[1], x[0]))
+    # key用于指定排序的元素，因为sorted默认使用list中每个item的第一个元素从小到
+    #大排列，所以这里通过lambda进行前后元素调序，并对词频去相反数，从而将词频最大的排列在最前面
+    words, _ = list(zip(*word_freq_sorted))
+    word_idx = dict(zip(words, xrange(len(words))))
+    word_idx['<unk>'] = len(words) #unk表示unknown，未知单词
+    return word_idx
+
+def lsh_transform(feature,k = 2000):
+    feature = feature.todense()
+
+    trans_mat = np.random.randn(feature.shape[1],k)
+    hash_mat = np.dot(feature,trans_mat)
+    hash_mat = np.array(hash_mat)
+    for i in range(len(hash_mat)):
+        for j in range(k):
+            if hash_mat[i][j] >= 0. :
+                hash_mat[i][j] = 1
+            else:
+                hash_mat[i][j] = 0
+    return hash_mat
+
+def lsh_cosine(feature):
+    hash_mat = lsh_transform(feature)
+    hamming_distance = len(np.nonzero(hash_mat[17]-hash_mat[19])[0])
+    cos_distance = math.cos(hamming_distance/len(hash_mat[0])*math.pi)
+    return cos_distance
+
 if __name__ == "__main__":
     file_list = [
         "Cross-Domain_data/Data Mining.txt",
@@ -145,6 +186,7 @@ if __name__ == "__main__":
     author_pair = make_author_pair(sub_view, obj_view)
 
     corpus = data_set["content"].values
+    print(corpus.split(","))
     vectorizer = TfidfVectorizer()
     feature = vectorizer.fit_transform(corpus)
     print(feature.shape)
