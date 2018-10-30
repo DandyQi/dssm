@@ -41,12 +41,12 @@ L2_N = 120
 # 读取数据
 class DataSet:
     def __init__(self):
-        self.train_query = sparse.csr_matrix(pickle.load(open("data/train_query", "rb")))
-        self.train_pos = sparse.csr_matrix(pickle.load(open("data/train_positive", "rb")))
-        self.train_neg = sparse.csr_matrix(pickle.load(open("data/train_negative", "rb")))
-        self.eval_query = sparse.csr_matrix(pickle.load(open("data/eval_query", "rb")))
-        self.eval_pos = sparse.csr_matrix(pickle.load(open("data/eval_positive", "rb")))
-        self.eval_neg = sparse.csr_matrix(pickle.load(open("data/eval_negative", "rb")))
+        self.train_query = sparse.csr_matrix(pickle.load(open("./data/train_query", "rb")))
+        self.train_pos = sparse.csr_matrix(pickle.load(open("./data/train_positive", "rb")))
+        self.train_neg = sparse.csr_matrix(pickle.load(open("./data/train_negative", "rb")))
+        self.eval_query = sparse.csr_matrix(pickle.load(open("./data/eval_query", "rb")))
+        self.eval_pos = sparse.csr_matrix(pickle.load(open("./data/eval_positive", "rb")))
+        self.eval_neg = sparse.csr_matrix(pickle.load(open("./data/eval_negative", "rb")))
 
 
 data_sets = DataSet()
@@ -307,5 +307,5 @@ with tf.Session() as sess:
                   (step / FLAGS.epoch_steps, epoch_loss, start - end))
 
     # 保存模型
-    save_path = saver.save(sess, "model/model_1.ckpt")
+    save_path = saver.save(sess, "./model/model_1.ckpt")
     print("Model saved in file: ", save_path)
