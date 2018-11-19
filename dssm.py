@@ -27,7 +27,7 @@ start = time.time()
 # 是否加BN层
 norm, epsilon = True, 0.001
 
-Feature_D = 33595
+Feature_D = 15644
 # negative sample
 NEG = 1
 # query batch size
@@ -47,11 +47,23 @@ class DataSet:
         self.eval_query = sparse.csr_matrix(pickle.load(open("./data/eval_query", "rb")))
         self.eval_pos = sparse.csr_matrix(pickle.load(open("./data/eval_positive", "rb")))
         self.eval_neg = sparse.csr_matrix(pickle.load(open("./data/eval_negative", "rb")))
-
+# class DataSet:
+#     def __init__(self):
+#         self.train_query = pickle.load(open("./data/train_query", "rb"))
+#         self.train_pos = pickle.load(open("./data/train_positive", "rb"))
+#         self.train_neg = pickle.load(open("./data/train_negative", "rb"))
+#         self.eval_query = pickle.load(open("./data/eval_query", "rb"))
+#         self.eval_pos = pickle.load(open("./data/eval_positive", "rb"))
+#         self.eval_neg = pickle.load(open("./data/eval_negative", "rb"))
 
 data_sets = DataSet()
 
-
+# X_train_query = data_sets.train_query[:500]
+# X_train_pos = data_sets.train_pos[:500]
+# X_train_neg = data_sets.train_neg[:500]
+# X_test_query = data_sets.train_query[500:]
+# X_test_pos = data_sets.train_pos[500:]
+# X_test_neg = data_sets.train_neg[500:]
 def add_layer(inputs, in_size, out_size, layer, activation_function=None):
     wlimit = np.sqrt(6.0 / (in_size + out_size))
     Weights = tf.Variable(tf.random_uniform([in_size, out_size], -wlimit, wlimit))
@@ -198,10 +210,10 @@ with tf.name_scope('Training'):
     # Optimizer
     train_step = tf.train.AdamOptimizer(FLAGS.learning_rate).minimize(loss)
 
-# with tf.name_scope('Accuracy'):
-#     correct_prediction = tf.equal(tf.argmax(prob, 1), 0)
-#     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
-#     tf.summary.scalar('accuracy', accuracy)
+with tf.name_scope('Accuracy'):
+    correct_prediction = tf.equal(tf.argmax(prob, 1), 0)
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    tf.summary.scalar('accuracy', accuracy)
 
 merged = tf.summary.merge_all()
 
@@ -249,11 +261,17 @@ def feed_dict(on_training, Train, batch_id, drop_out_prob):
         query_in, doc_positive_in, doc_negative_in = pull_batch(data_sets.train_query,
                                                                 data_sets.train_pos,
                                                                 data_sets.train_neg, batch_id)
+        # query_in, doc_positive_in, doc_negative_in = pull_batch(X_train_query,
+        #                                                         X_train_pos,
+        #                                                         X_train_neg, batch_id)
     else:
         drop_out_prob = 1.0
         query_in, doc_positive_in, doc_negative_in = pull_batch(data_sets.eval_query,
                                                                 data_sets.eval_pos,
                                                                 data_sets.eval_neg, batch_id)
+        # query_in, doc_positive_in, doc_negative_in = pull_batch(X_test_query,
+        #                                                         X_test_pos,
+        #                                                         X_test_neg, batch_id)
     return {query_batch: query_in, doc_positive_batch: doc_positive_in, doc_negative_batch: doc_negative_in,
             on_train: on_training}
 
@@ -282,30 +300,42 @@ with tf.Session() as sess:
             # print(sess.run(doc_l1, feed_dict=feed_dict(True, batch_id % FLAGS.pack_size, 0.5)).shape)
             # train loss
             epoch_loss = 0
+            acc = 0
             for i in range(FLAGS.pack_size):
                 loss_v = sess.run(loss, feed_dict=feed_dict(False, True, i, 1))
+                # print('query_norm',sess.run(query_norm, feed_dict=feed_dict(False, True, i, 1)))
+                # print('doc_norm',sess.run(doc_norm, feed_dict=feed_dict(False, True, i, 1)))
+                # print('norm_prod',sess.run(norm_prod, feed_dict=feed_dict(False, True, i, 1)))
                 epoch_loss += loss_v
-
+                acc_v = sess.run(accuracy,feed_dict = feed_dict(False,True,0,1))
+                acc += acc_v
+            acc /= FLAGS.pack_size
             epoch_loss /= (FLAGS.pack_size * query_BS)
             train_loss = sess.run(train_loss_summary, feed_dict={train_average_loss: epoch_loss})
             train_writer.add_summary(train_loss, step + 1)
 
             print("\nEpoch #%-5d | Train Loss: %-4.3f | PureTrainTime: %-3.3fs" %
                   (step / FLAGS.epoch_steps, epoch_loss, end - start))
-
+            print("Epoch #%-5d | Train accuracy: %.2f" % (step / FLAGS.epoch_steps, acc))
             # test loss
             start = time.time()
             epoch_loss = 0
+            acc = 0
             for i in range(FLAGS.test_pack_size):
                 loss_v = sess.run(loss, feed_dict=feed_dict(False, False, i, 1))
                 epoch_loss += loss_v
+                acc_v = sess.run(accuracy,feed_dict = feed_dict(False,False,0,1))
+                acc += acc_v
+            # print(epoch_loss)
+            # print(FLAGS.test_pack_size * query_BS)
+            acc /= FLAGS.test_pack_size
             epoch_loss /= (FLAGS.test_pack_size * query_BS)
             test_loss = sess.run(loss_summary, feed_dict={average_loss: epoch_loss})
             train_writer.add_summary(test_loss, step + 1)
             # test_writer.add_summary(test_loss, step + 1)
-            print("Epoch #%-5d | Test  Loss: %-4.3f | Calc_LossTime: %-3.3fs" %
+            print("Epoch #%-5d | Eval  Loss: %-4.3f | Calc_LossTime: %-3.3fs" %
                   (step / FLAGS.epoch_steps, epoch_loss, start - end))
-
+            print("Epoch #%-5d | Eval  accuracy: %.2f" % (step / FLAGS.epoch_steps, acc))
     # 保存模型
     save_path = saver.save(sess, "./model/model_1.ckpt")
     print("Model saved in file: ", save_path)

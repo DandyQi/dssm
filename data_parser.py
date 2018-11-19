@@ -46,7 +46,7 @@ def make_author_pair(sub, obj):
     obj_author_list = domain2author[domain2author["domain"] == obj]
 
     common_author_list = pd.merge(left=sub_author_list, right=obj_author_list, how="inner", on="author")["author"]
-    logger.info("the size of collaboration author: %s" % len(common_author_list))
+    logger.info("the size of collaboration author: %s" % common_author_list.shape[0])
     
     pair = []
     for author in common_author_list:
@@ -66,25 +66,33 @@ def make_feature(author):
     papers = author2paper[author2paper["author"] == author]
     papers["year"] = papers["year"].astype(np.int32)
     paper_list = papers[papers["year"] <= train_test_year]["paper_idx"].values.astype(np.int32)
-    feat = np.mean(feature[paper_list], axis=0)
-    return feat
+    #避免特征为全零
+    if len(paper_list) == 0:
+        return False,0
+    else:
+        return True,np.mean(feature[paper_list], axis=0)
+    
 
 
 def save_data(pair, name):
     query_list = []
     pos_list = []
     for idx, item in pair.iterrows():
-        query_list.append(make_feature(item["sub_author"]))
-        pos_list.append(make_feature(item["obj_author"]))
-
+        query_bool,query_feat = make_feature(item["sub_author"])
+        pos_bool,pos_feat = make_feature(item["obj_author"])
+        # query_list.append(make_feature(item["sub_author"]))
+        # pos_list.append(make_feature(item["obj_author"]))
+        if query_bool and pos_bool:
+            query_list.append(query_feat)
+            pos_list.append(pos_feat) 
     query = np.array(query_list)
     pos = np.array(pos_list)
 
-    pickle.dump(query, open("data/%s_query" % name, "wb"), protocol=2)
-    pickle.dump(pos, open("data/%s_positive" % name, "wb"), protocol=2)
+    pickle.dump(query, open("./data/%s_query" % name, "wb"), protocol=2)
+    pickle.dump(pos, open("./data/%s_positive" % name, "wb"), protocol=2)
 
-    neg = feature[np.array(random.sample(range(data_set.shape[0]), pair.shape[0]))].toarray()
-    pickle.dump(neg, open("data/%s_negative" % name, "wb"), protocol=2)
+    neg = feature[np.array(random.sample(range(data_set.shape[0]), pair.shape[0]))]#.toarray()
+    pickle.dump(neg, open("./data/%s_negative" % name, "wb"), protocol=2)
 
 
 def make_training_set(pair, year):
@@ -101,8 +109,9 @@ def make_training_set(pair, year):
 
     logger.info("the size of training pair: %s" % training_pair.shape[0])
     logger.info("the size of eval pair: %s" % eval_pair.shape[0])
-
+    print('making train')
     save_data(training_pair, "train")
+    print('making eval')
     save_data(eval_pair, "eval")
 
     logger.info("save data")
@@ -230,33 +239,33 @@ if __name__ == "__main__":
         "Cross-Domain_data/Theory.txt",
         "Cross-Domain_data/Visualization.txt"
     ]
+    train_test_year = 2001
+    df_list = []
+    for file in file_list:
+        df = pd.read_csv(file, sep="\t", names=["conference/journal", "title", "author", "year", "abstract"]).dropna()
+        df["domain"] = file.split("/")[1].split(".")[0]
+        df_list.append(df)
+    data_set = pd.concat(df_list, ignore_index=True)
+    data_set = pd.DataFrame(data_set)
+
+    data_set = data_set.apply(year_str2int, axis=1)
+    data_set = data_set.apply(concat, axis=1)
+
+    logger.info("the size of data set: %s" % data_set.shape[0])
+    author2paper = make_paper_mapping(data_set)
+    domain2author = make_domain_mapping(data_set)
+
+    sub_view = "Data Mining"
+    obj_view = "Theory"
+
+    author_pair = make_author_pair(sub_view, obj_view)
     if os.path.exists('./Cross-Domain_data/feature.h5'):
         print('Reading file: feature.h5')
         f = h5py.File('./Cross-Domain_data/feature.h5','r')
         feature = f['A'][:]
         f.close()
     else:
-        train_test_year = 2001
 
-        df_list = []
-        for file in file_list:
-            df = pd.read_csv(file, sep="\t", names=["conference/journal", "title", "author", "year", "abstract"]).dropna()
-            df["domain"] = file.split("/")[1].split(".")[0]
-            df_list.append(df)
-        data_set = pd.concat(df_list, ignore_index=True)
-        data_set = pd.DataFrame(data_set)
-
-        data_set = data_set.apply(year_str2int, axis=1)
-        data_set = data_set.apply(concat, axis=1)
-
-        logger.info("the size of data set: %s" % data_set.shape[0])
-        author2paper = make_paper_mapping(data_set)
-        domain2author = make_domain_mapping(data_set)
-
-        sub_view = "Data Mining"
-        obj_view = "Theory"
-
-        author_pair = make_author_pair(sub_view, obj_view)
 
         corpus = data_set["content"].values
         # print(corpus.split(","))
@@ -264,7 +273,8 @@ if __name__ == "__main__":
         # feature = vectorizer.fit_transform(corpus)
         feature = letter3grams(corpus)
     print(feature.shape)
-    
+    # feature = lsh_transform(feature)
+    # print(feature.shape)
     # print(1-pairwise_distances(feature[0:20],metric="cosine")[17][19])
     # print(lsh_cosine(feature))
-    # make_training_set(author_pair, train_test_year)
+    make_training_set(author_pair, train_test_year)
