@@ -36,7 +36,7 @@ query_BS = 100
 BS = query_BS * NEG
 L1_N = 400
 L2_N = 120
-
+ssss = 1
 
 # 读取数据
 class DataSet:
